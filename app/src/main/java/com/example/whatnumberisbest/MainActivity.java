@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
             if (contactUri != null) {
                 String contactId = getContactId(contactUri);
                 if (contactId != null) {
-                    Map<String, Integer> callCounts = getCallCountsForContact(contactId);
+                    Map<String, String> callCounts = getCallInfoForContact(contactId);
                     displayCallCounts(callCounts);
                 }
             }
@@ -82,15 +82,17 @@ public class MainActivity extends AppCompatActivity {
     private String getContactId(Uri contactUri) {
         Cursor cursor = getContentResolver().query(contactUri, null, null, null, null);
         if (cursor != null && cursor.moveToFirst()) {
-            String contactId = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts._ID));
+            int index = cursor.getColumnIndex(ContactsContract.Contacts._ID);
+            index = max(index, 0);
+            String contactId = cursor.getString(index);
             cursor.close();
             return contactId;
         }
         return null;
     }
 
-    private Map<String, Integer> getCallCountsForContact(String contactId) {
-        Map<String, Integer> callCounts = new HashMap<>();
+    private Map<String, String> getCallInfoForContact(String contactId) {
+        Map<String, String> callCounts = new HashMap<>();
 
         Cursor phonesCursor = getContentResolver().query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
@@ -109,21 +111,62 @@ public class MainActivity extends AppCompatActivity {
                 String[] parts_to_replace = {" ", "+46", "0046"};
                 String[] parts_to_replace_with = {"", "0", "0"};
                 int callCount = getCallCountForNumber(phoneNumber);
-                // TODO: int totalDuration = getCallDurationForNumber(phoneNumber);
+                int totalDuration = getCallDurationForNumber(phoneNumber);
 
                 for (int i = 0; i < parts_to_replace.length; i++) {
                     String part_to_replace = parts_to_replace[i];
                     String part_to_replace_with = parts_to_replace_with[i];
                     String newPhoneNumber = phoneNumber.replace(part_to_replace, part_to_replace_with);
                     callCount += getCallCountForNumber(newPhoneNumber);
-                    // TODO: totalDuration += getCallDurationForNumber(newPhoneNumber);
+                    totalDuration += getCallDurationForNumber(newPhoneNumber);
                 }
-                callCounts.put(phoneNumber, callCount);
+
+                String callInfo = "calls: " + callCount + ", duration: " + getDurationInMinutesAndSeconds(totalDuration);
+                callCounts.put(phoneNumber, callInfo);
             }
             phonesCursor.close();
         }
 
         return callCounts;
+    }
+
+    private String getDurationInMinutesAndSeconds(int duration) {
+        int hours = duration / 3600;
+        int minutes = (duration % 3600) / 60;
+        int remainingSeconds = duration % 60;
+        String durationStr = Integer.toString(remainingSeconds);
+        if (minutes > 0){
+            durationStr = minutes + ":" + durationStr;
+        }
+        if (hours > 0) {
+            durationStr = hours + ":" + durationStr;
+        }
+        return durationStr;
+    }
+
+    private int getCallDurationForNumber(String phoneNumber) {
+        int durationInSeconds = 0;
+        Uri callUri = Uri.parse("content://call_log/calls");
+        Cursor cursor = getContentResolver().query(
+                callUri,
+                null,
+                CallLog.Calls.NUMBER + " = ?",
+                new String[]{phoneNumber},
+                null
+        );
+
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                int index = cursor.getColumnIndex(CallLog.Calls.DURATION);
+                index = max(index, 0);
+                String durationString = cursor.getString(index);
+                int duration = Integer.parseInt(durationString);
+                durationInSeconds += duration;
+            }
+            cursor.close();
+        }
+
+        return durationInSeconds;
     }
 
     private int getCallCountForNumber(String phoneNumber) {
@@ -145,12 +188,12 @@ public class MainActivity extends AppCompatActivity {
         return count;
     }
 
-    private void displayCallCounts(Map<String, Integer> callCounts) {
+    private void displayCallCounts(Map<String, String> numberInfo) {
         TextView textView = findViewById(R.id.textView);
         StringBuilder displayText = new StringBuilder();
 
-        for (Map.Entry<String, Integer> entry : callCounts.entrySet()) {
-            displayText.append("Number: ").append(entry.getKey()).append(", Calls: ").append(entry.getValue()).append("\n");
+        for (Map.Entry<String, String> entry : numberInfo.entrySet()) {
+            displayText.append("Number: ").append(entry.getKey()).append(", ").append(entry.getValue()).append("\n");
         }
 
         textView.setText(displayText.toString());
